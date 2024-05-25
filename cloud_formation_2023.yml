@@ -1,0 +1,695 @@
+AWSTemplateFormatVersion: 2010-09-09
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Global
+        Parameters:
+          - Client
+      - Label:
+          default: VPC
+        Parameters:
+          - VpcCidr
+          - VpcPublicSubnetZone
+          - VpcPublicSubnetCidr
+      - Label:
+          default: EC2
+        Parameters:
+          - Ec2KeyPairName
+          - Ec2AmiId
+          - Ec2IamInstanceProfile
+          - Ec2JupyterPassword
+    ParameterLabels:
+      Client:
+        default: Cliente
+      VpcCidr:
+        default: VPC CIDR
+      VpcPublicSubnetCidr:
+        default: Subnet Publico CIDR
+      VpcPublicSubnetZone:
+        default: Zona da Subnet Publica
+      Ec2KeyPairName:
+        default: Chave de Acesso
+      Ec2AmiId:
+        default: AMI
+      Ec2IamInstanceProfile:
+        default: IAM Instance Profile Id
+      Ec2JupyterPassword:
+        default: Senha Jupyter
+Parameters:
+  Client:
+    Type: String
+    Description: O nome do cliente
+    Default: sptech
+  VpcCidr:
+    Type: String
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+    Description: O bloco CIDR da VPC (ex. 10.10.0.0/24)
+    Default: 10.100.0.0/24
+  VpcPublicSubnetCidr:
+    Type: String
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+    Description: O bloco CIDR da Subnet Publica (ex. 10.10.0.0/24)
+    Default: 10.100.0.0/24
+  VpcPublicSubnetZone:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: A zona de disponibilidade para criar a Subnet Publica
+    Default: us-east-1a
+  Ec2KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Chave de acesso a instancia
+  Ec2AmiId:
+    Type: String
+    Description: Id da AMI
+    Default: ami-0f9fc25dd2506cf6d # UNIX
+    # Default: ami-0aa2b7722dc1b5612   # Ubuntu 20.04
+  Ec2IamInstanceProfile:
+    Type: String
+    Description: O nome do Instance Profile
+    Default: EMR_EC2_DefaultRole
+  Ec2JupyterPassword:
+    Type: String
+    NoEcho: true
+    Description: A senha de acesso ao jupyter
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}
+  InternetGatewayAttachment:
+    DependsOn: [InternetGateway, Vpc]
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref Vpc
+  PublicRouteTable:
+    DependsOn: Vpc
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}-public
+  PublicRouteTableRouteInternet:
+    DependsOn: [PublicRouteTable, InternetGateway]
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref VpcPublicSubnetZone
+      CidrBlock: !Ref VpcPublicSubnetCidr
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}-public
+  RouteTableAssociationPublicSubnet:
+    DependsOn: [PublicRouteTable, PublicSubnet]
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet
+  InstanceSecurityGroup:
+    DependsOn: Vpc
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow only https ingress
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}
+  InstanceSpark:
+    DependsOn: [RouteTableAssociationPublicSubnet, InstanceSecurityGroup]
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref Ec2KeyPairName
+      ImageId: !Ref Ec2AmiId
+      InstanceType: t2.small
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp2
+      SubnetId: !Ref PublicSubnet
+      IamInstanceProfile: !Ref Ec2IamInstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          amazon-linux-extras install java-openjdk11 -y
+          curl -O https://dlcdn.apache.org/spark/spark-3.2.1/spark-3.2.1-bin-hadoop3.2.tgz
+          tar xzf spark-3.2.1-bin-hadoop3.2.tgz -C /usr/local --owner root --group root --no-same-owner
+          rm -rf spark-3.2.1-bin-hadoop3.2.tgz
+          mv /usr/local/spark-3.2.1-bin-hadoop3.2 /usr/local/spark
+          pip3 install pyspark --no-cache-dir
+          pip3 install jupyterlab --no-cache-dir
+          touch /lib/systemd/system/jupyter.service
+          echo "[Unit]" >> /lib/systemd/system/jupyter.service
+          echo "Description=Jupyter Notebook" >> /lib/systemd/system/jupyter.service
+          echo "[Service]" >> /lib/systemd/system/jupyter.service
+          echo "Type=simple" >> /lib/systemd/system/jupyter.service
+          echo "ExecStart=/opt/jupyter/script/start.sh" >> /lib/systemd/system/jupyter.service
+          echo "Restart=always" >> /lib/systemd/system/jupyter.service
+          echo "RestartSec=10" >> /lib/systemd/system/jupyter.service
+          echo "[Install]" >> /lib/systemd/system/jupyter.service
+          echo "WantedBy=multi-user.target" >> /lib/systemd/system/jupyter.service
+          mkdir /opt/jupyter
+          mkdir /opt/jupyter/notebook
+          mkdir /opt/jupyter/script
+          touch /opt/jupyter/script/start.sh
+          echo '#!/bin/bash' >> /opt/jupyter/script/start.sh
+          echo '/usr/bin/python3 -m notebook --NotebookApp.notebook_dir=/opt/jupyter/notebook --NotebookApp.allow_origin='*' --NotebookApp.password=$(/usr/bin/python3 -c "from notebook.auth import passwd; print(passwd(\"urubu100\"))")  --allow-root --ip 0.0.0.0 --port 80' >> /opt/jupyter/script/start.sh
+          chmod +x /opt/jupyter/script/start.sh
+          systemctl daemon-reload
+          systemctl start jupyter
+          systemctl enable jupyter
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}
+  SqsRaw:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: kallistra-raw-prod-sqs
+      MessageRetentionPeriod: 1209600
+      VisibilityTimeout: 900
+  SnsRaw:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: kallistra-raw-prod-sns
+      Subscription:
+        - Endpoint: !GetAtt SqsRaw.Arn
+          Protocol: sqs
+  SqsTrusted:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: kallistra-trusted-prod-sqs
+      MessageRetentionPeriod: 1209600
+      VisibilityTimeout: 900
+  SnsTrusted:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: kallistra-trusted-prod-sns
+      Subscription:
+        - Endpoint: !GetAtt SqsTrusted.Arn
+          Protocol: sqs
+  TopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action:
+              - "sns:Publish"
+              - "sns:GetTopicAttributes"
+            Principal: "*"
+            Resource: "*"
+      Topics:
+        - !Ref SnsRaw
+        - !Ref SnsTrusted
+  QueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref SqsRaw
+        - !Ref SqsTrusted
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: "*"
+  Bucket1:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: kallistra-raw-prod
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Topic: !Ref SnsRaw
+            Event: s3:ObjectCreated:*
+  Bucket2:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: kallistra-trusted-prod
+  Bucket3:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: kallistra-client-prod
+  LambdaRawTrusted:
+    Type: AWS::Lambda::Function
+    Properties:
+      Timeout: 900
+      MemorySize: 5120
+      Runtime: python3.8
+      Handler: raw_trusted/main.lambda_handler
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      FunctionName: kallistra-raw-trusted-prod
+      Layers:
+        - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
+      Environment:
+        Variables:
+          BUCKET_RAW: kallistra-raw-prod
+          BUCKET_TRUSTED: kallistra-trusted-prod
+          TRUSTED_CLIENT_TOPIC_ARN: !Ref SnsTrusted
+      Code:
+        S3Bucket: kallistra-utils-prod
+        S3Key: lambda_zip/lambda_package_raw_trusted.zip
+  RawPermissionInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaRawTrusted
+      Action: lambda:InvokeFunction
+      Principal: sqs.amazonaws.com
+      SourceArn: !GetAtt SqsRaw.Arn
+  LambdaRawTrustedEvent:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1
+      Enabled: true
+      EventSourceArn: !GetAtt SqsRaw.Arn
+      FunctionName: !Ref LambdaRawTrusted
+  LambdaTrustedClient:
+    Type: AWS::Lambda::Function
+    Properties:
+      Timeout: 900
+      MemorySize: 10240
+      PackageType: Image
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      FunctionName: kallistra-trusted-client-prod
+      Environment:
+        Variables:
+          USERNAME: admin
+          PASSWORD: Kallistra123$
+          BUCKET_CLIENT: kallistra-client-prod
+          BUCKET_TRUSTED: kallistra-trusted-prod
+          HOSTNAME: kallistra.ckgyxtx5gtaw.us-east-1.rds.amazonaws.com
+      Code:
+        ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.us-east-1.amazonaws.com/trusted_client_kallistra_prod:latest"
+  TrustedPermissionInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaTrustedClient
+      Action: lambda:InvokeFunction
+      Principal: sqs.amazonaws.com
+      SourceArn: !GetAtt SqsTrusted.Arn
+  LambdaTrustedClientEvent:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1
+      Enabled: true
+      EventSourceArn: !GetAtt SqsTrusted.Arn
+      FunctionName: !Ref LambdaTrustedClient
+  KallistraDB:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: kallistra
+  KallistraDBTrusted:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: kallistra_trusted
+  SensorsTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref KallistraDB
+      TableInput:
+        Name: sensor_readings
+        TableType: EXTERNAL_TABLE
+        Parameters: { "classification": "parquet" }
+        PartitionKeys:
+          - Name: ano
+            Type: string
+            Comment: Ano referente à data de criação do registro
+          - Name: mes
+            Type: string
+            Comment: Mês referente à data de criação do registro
+          - Name: dia
+            Type: string
+            Comment: Dia referente à data de criação do registro
+          - Name: hora
+            Type: string
+            Comment: Hora referente à data de criação do registro
+          - Name: minuto
+            Type: string
+            Comment: Minuto referente à data de criação do registro
+        StorageDescriptor:
+          Location: s3://kallistra-client-prod/sensors/
+          InputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
+          OutputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
+          SerdeInfo:
+            Parameters: { "serialization.format" : 1 }
+            SerializationLibrary: "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+          StoredAsSubDirectories: false
+          Columns:
+            - Name: reading_timestamp
+              Type: string
+              Comment: Data e hora da medição
+            - Name: humidity
+              Type: double
+              Comment: Percentual de humidade medida pelo sensor
+            - Name: heart_rate
+              Type: int
+              Comment: Batimentos por minuto do coração
+            - Name: oxygen
+              Type: int
+              Comment: Percentual de oxigenação no sangue
+            - Name: sonorous
+              Type: double
+              Comment: Decibéis medidos pelo sensor de ruído
+            - Name: movement
+              Type: int
+              Comment: Quantidade de movimento medida pelo Acelerômetro
+            - Name: latitude_source
+              Type: double
+              Comment: Latitude medida pelo sensor de localização
+            - Name: longitude_source
+              Type: double
+              Comment: Longitude medida pelo sensor de localização
+            - Name: altitude
+              Type: int
+              Comment: Altitude medida pelo sensor de localização
+            - Name: velocity
+              Type: double
+              Comment: Velocidade medida pelo Acelerômetro
+            - Name: alert_humidity
+              Type: string
+              Comment: Status da medição de humidade
+            - Name: alert_heart_rate
+              Type: string
+              Comment: Status da medição de batimentos cardíacos
+            - Name: alert_oxygen
+              Type: string
+              Comment: Status da medição de oxigenação do sangue
+            - Name: alert_sonorous
+              Type: string
+              Comment: Status da medição de ruído
+            - Name: alert_movement
+              Type: string
+              Comment: Status da medição de movimento/aceleração
+            - Name: device_id
+              Type: int
+              Comment: ID do dispositivo que gerou o dado
+            - Name: battery
+              Type: double
+              Comment: Nível de bateria
+  SensorsTableTrusted:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref KallistraDBTrusted
+      TableInput:
+        Name: sensor_readings
+        TableType: EXTERNAL_TABLE
+        Parameters: { "classification": "parquet" }
+        PartitionKeys:
+          - Name: ano
+            Type: string
+            Comment: Ano referente à data de criação do registro
+          - Name: mes
+            Type: string
+            Comment: Mês referente à data de criação do registro
+          - Name: dia
+            Type: string
+            Comment: Dia referente à data de criação do registro
+          - Name: hora
+            Type: string
+            Comment: Hora referente à data de criação do registro
+          - Name: minuto
+            Type: string
+            Comment: Minuto referente à data de criação do registro
+        StorageDescriptor:
+          Location: s3://kallistra-trusted-prod/sensors/
+          InputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
+          OutputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
+          SerdeInfo:
+            Parameters: { "serialization.format" : 1 }
+            SerializationLibrary: "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+          StoredAsSubDirectories: false
+          Columns:
+            - Name: reading_timestamp
+              Type: string
+              Comment: Data e hora da medição
+            - Name: humidity
+              Type: double
+              Comment: Percentual de humidade medida pelo sensor
+            - Name: heart_rate
+              Type: int
+              Comment: Batimentos por minuto do coração
+            - Name: oxygen
+              Type: int
+              Comment: Percentual de oxigenação no sangue
+            - Name: sonorous
+              Type: double
+              Comment: Decibéis medidos pelo sensor de ruído
+            - Name: movement
+              Type: int
+              Comment: Quantidade de movimento medida pelo Acelerômetro
+            - Name: latitude_source
+              Type: double
+              Comment: Latitude medida pelo sensor de localização
+            - Name: longitude_source
+              Type: double
+              Comment: Longitude medida pelo sensor de localização
+            - Name: altitude
+              Type: int
+              Comment: Altitude medida pelo sensor de localização
+            - Name: velocity
+              Type: double
+              Comment: Velocidade medida pelo Acelerômetro
+            - Name: device_id
+              Type: int
+              Comment: ID do dispositivo que gerou o dado
+            - Name: battery
+              Type: double
+              Comment: Nível de bateria
+  AnClientesTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref KallistraDB
+      TableInput:
+        Name: an_clientes
+        TableType: EXTERNAL_TABLE
+        Parameters: { "classification": "parquet" }
+        StorageDescriptor:
+          Location: s3://kallistra-trusted-prod/an_clientes/
+          InputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
+          OutputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
+          SerdeInfo:
+            Parameters: { "serialization.format" : 1 }
+            SerializationLibrary: "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+          StoredAsSubDirectories: false
+          Columns:
+            - Name: id
+              Type: integer
+              Comment: Identificador do registro
+            - Name: nome
+              Type: string
+              Comment: Nome do cliente
+            - Name: celular
+              Type: string
+              Comment: Telefone da vítima para contato
+            - Name: email
+              Type: string
+              Comment: Email da vítima para contato
+            - Name: cpf
+              Type: string
+              Comment: CPF do cliente
+            - Name: rg
+              Type: string
+              Comment: RG do cliente
+            - Name: uf
+              Type: string
+              Comment: Unidade Federativa onde a vítima reside
+            - Name: municipio
+              Type: string
+              Comment: Município onde a vítima reside
+            - Name: genero
+              Type: string
+              Comment: Gênero da vítima
+  ClientesTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref KallistraDB
+      TableInput:
+        Name: clientes
+        TableType: EXTERNAL_TABLE
+        Parameters: { "classification": "parquet" }
+        StorageDescriptor:
+          Location: s3://kallistra-trusted-prod/clientes/
+          InputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
+          OutputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
+          SerdeInfo:
+            Parameters: { "serialization.format" : 1 }
+            SerializationLibrary: "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+          StoredAsSubDirectories: false
+          Columns:
+            - Name: id
+              Type: integer
+              Comment: Identificador do registro
+            - Name: fk_anon
+              Type: integer
+              Comment: Faz referência ao registro na tabela anonimizada
+            - Name: nome
+              Type: string
+              Comment: Nome do cliente
+            - Name: celular
+              Type: string
+              Comment: Telefone da vítima para contato
+            - Name: email
+              Type: string
+              Comment: Email da vítima para contato
+            - Name: cpf
+              Type: string
+              Comment: CPF do cliente
+            - Name: rg
+              Type: string
+              Comment: RG do cliente
+            - Name: uf
+              Type: string
+              Comment: Unidade Federativa onde a vítima reside
+            - Name: municipio
+              Type: string
+              Comment: Município onde a vítima reside
+            - Name: genero
+              Type: string
+              Comment: Gênero da vítima
+  AgressoesTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref KallistraDB
+      TableInput:
+        Name: agressoes
+        TableType: EXTERNAL_TABLE
+        Parameters: { "classification": "parquet" }
+        StorageDescriptor:
+          Location: s3://kallistra-trusted-prod/agressoes/
+          InputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
+          OutputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
+          SerdeInfo:
+            Parameters: { "serialization.format" : 1 }
+            SerializationLibrary: "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+          StoredAsSubDirectories: false
+          Columns:
+            - Name: id
+              Type: string
+              Comment: Id do registro
+            - Name: fk_anon
+              Type: string
+              Comment: Referência à tabela de clientes anonimizada
+            - Name: data_cadastro
+              Type: string
+              Comment: Data em que a agressão foi cadastrada
+            - Name: denunciante
+              Type: string
+              Comment: Nome do denunciante
+            - Name: cenario_violacao
+              Type: string
+              Comment: Local em que a violação ocorreu
+            - Name: frequencia
+              Type: string
+              Comment: Frequência em que ocorre a violência
+            - Name: inicio_violacoes
+              Type: string
+              Comment: Data em que as violações foram iniciadas
+            - Name: grupo_vulneravel
+              Type: string
+              Comment: Registra se a pessoa pertence a um grupo social ou demográfico considerado vulnerável
+            - Name: motivacao
+              Type: string
+              Comment: Motivo pelo qual o agressor iniciou a violência
+            - Name: relacao_vitima_suspeito
+              Type: string
+              Comment: Nível de relação que a vítima tem com o agressor (Pai, Avó, Parceiro, Desconhecido)
+            - Name: genero_vitima
+              Type: string
+              Comment: Gênero da vítima
+            - Name: orientacao_vitima
+              Type: string
+              Comment: Orientação sexual da vítima
+            - Name: faixa_etaria_vitima
+              Type: string
+              Comment: Faixa etária da vítima (X meses, Y anos)
+            - Name: nacionalidade_vitima
+              Type: string
+              Comment: Nacionalidade da vítima
+            - Name: doenca_rara_vitima
+              Type: string
+              Comment: Doença ou lista de doênças raras que a vítima possui (Lúpus, Diabéte, etc)
+            - Name: vitima_preso
+              Type: string
+              Comment: Descreve se a vítima está presa(o) (Sim, Não)
+            - Name: pais_vitima
+              Type: string
+              Comment: País onde a vítima reside
+            - Name: uf_vitima
+              Type: string
+              Comment: Unidade Federativa onde a vítima reside
+            - Name: municipio_vitima
+              Type: string
+              Comment: Município Federativa onde a vítima reside
+            - Name: genero_suspeito
+              Type: string
+              Comment: Gênero do suspeito
+            - Name: faixa_etaria_suspeito
+              Type: string
+              Comment: Faixa etária do suspeito
+            - Name: doenca_rara_suspeito
+              Type: string
+              Comment: Doença ou lista de doenças raras do suspeito (Diabetes, Doenã de Addison, etc)
+            - Name: suspeito_preso
+              Type: string
+              Comment: Descreve se suspeito está preso ou não (Sim, Não, Parcialmente, Semi-Aberto,
+            - Name: pais_suspeito
+              Type: string
+              Comment: País em que o suspeito reside
+            - Name: uf_suspeito
+              Type: string
+              Comment: Unidade Federativa em que o suspeito reside
+            - Name: suspeito_municipio
+              Type: string
+              Comment: Município em que o suspeito reside
+            - Name: etnia_suspeito
+              Type: string
+              Comment: Raça/cor do suspeito (Branco, Amarelo, etc)
+            - Name: violacao
+              Type: string
+              Comment: Tipo da violação que ocorreu (violencia psíquica, maus tratos, genocídio, agressão
+            - Name: dia_semana
+              Type: string
+              Comment: Dia da semana em que ocorreu a denúncia
+            - Name: mes
+              Type: string
+              Comment: Mês da semana em que ocorreu a denúncia
