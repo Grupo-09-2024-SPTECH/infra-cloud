@@ -7,16 +7,16 @@ CREATE TABLE IF NOT EXISTS `tb_desempenho` (
 	`id_desempenho` int AUTO_INCREMENT NOT NULL,
 	`fk_execucao` int NOT NULL,
 	`tp_classe` int NOT NULL,
-	`vl_precision` decimal(10,10) NOT NULL,
-	`vl_recall` decimal(10,10) NOT NULL,
-	`vl_f1_score` decimal(10,10) NOT NULL,
+	`vl_precision` decimal(10,3) NOT NULL,
+	`vl_recall` decimal(10,3) NOT NULL,
+	`vl_f1_score` decimal(10,3) NOT NULL,
 	PRIMARY KEY (`id_desempenho`)
 );
 
 CREATE TABLE IF NOT EXISTS `tb_execucao` (
 	`id_execucao` int AUTO_INCREMENT NOT NULL,
 	`fk_modelo` int NOT NULL,
-	`vl_accuracy` decimal(10,10) NOT NULL,
+	`vl_accuracy` decimal(10,3) NOT NULL,
 	`dt_inicio_exec` datetime NOT NULL,
 	`dt_fim_exec` datetime NOT NULL,
 	PRIMARY KEY (`id_execucao`)
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS `tb_hiperparametro` (
 	`id_parametro` int AUTO_INCREMENT NOT NULL,
 	`fk_execucao` int NOT NULL,
 	`nome_parametro` varchar(255) NOT NULL,
-	`vl_parametro` decimal(10,10) NOT NULL,
+	`vl_parametro` decimal(10,3) NOT NULL,
 	PRIMARY KEY (`id_parametro`)
 );
 
@@ -45,11 +45,11 @@ CREATE TABLE IF NOT EXISTS `vw_modelo_desempenho` (
 	`nome_modelo` varchar(255) NOT NULL,
 	`nome_parametro` varchar(255) NOT NULL,
 	`tp_classe` int NOT NULL,
-	`vl_accuracy` decimal(10,10) NOT NULL,
-	`vl_parametro` decimal(10,10) NOT NULL,
-	`vl_precision` decimal(10,10) NOT NULL,
-	`vl_recall` decimal(10,10) NOT NULL,
-	`vl_f1_score` decimal(10,10) NOT NULL,
+	`vl_accuracy` decimal(10,3) NOT NULL,
+	`vl_parametro` decimal(10,3) NOT NULL,
+	`vl_precision` decimal(10,3) NOT NULL,
+	`vl_recall` decimal(10,3) NOT NULL,
+	`vl_f1_score` decimal(10,3) NOT NULL,
 	`dt_inicio_exec` datetime NOT NULL,
 	`dt_fim_exec` datetime NOT NULL
 );
