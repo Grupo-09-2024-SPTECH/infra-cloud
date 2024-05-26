@@ -61,8 +61,6 @@ Parameters:
   Ec2AmiId:
     Type: String
     Description: Id da AMI
-    # Default: ami-0f9fc25dd2506cf6d # UNIX
-    # Default: ami-0c55b159cbfafe1f0   # Ubuntu 18.04
     Default: ami-04b70fa74e45c3917 # Ubuntu 24.04
   Ec2IamInstanceProfile:
     Type: String
@@ -198,36 +196,28 @@ Resources:
   SqsRaw:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: adoptai-raw-dev-sqs
+      QueueName: adoptai-raw-prod-sqs
       MessageRetentionPeriod: 1209600
       VisibilityTimeout: 900
   SnsRaw:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: adoptai-raw-dev-sns
+      TopicName: adoptai-raw-prod-sns
       Subscription:
         - Endpoint: !GetAtt SqsRaw.Arn
           Protocol: sqs
-  # SqsClientSQL:
+  # SqsTrusted:
   #   Type: AWS::SQS::Queue
   #   Properties:
-  #     QueueName: adoptai-client-sql-dev-sqs
+  #     QueueName: adoptai-trusted-prod-sqs
   #     MessageRetentionPeriod: 1209600
   #     VisibilityTimeout: 900
-  # SqsClientPredict:
-  #   Type: AWS::SQS::Queue
-  #   Properties:
-  #     QueueName: adoptai-client-predict-dev-sqs
-  #     MessageRetentionPeriod: 1209600
-  #     VisibilityTimeout: 900
-  # SnsClient:
+  # SnsTrusted:
   #   Type: AWS::SNS::Topic
   #   Properties:
-  #     TopicName: adoptai-client-dev-sns
+  #     TopicName: adoptai-trusted-prod-sns
   #     Subscription:
-  #       - Endpoint: !GetAtt SqsClientSQL.Arn
-  #         Protocol: sqs
-  #       - Endpoint: !GetAtt SqsClientPredict.Arn
+  #       - Endpoint: !GetAtt SqsTrusted.Arn
   #         Protocol: sqs
   TopicPolicy:
     Type: AWS::SNS::TopicPolicy
@@ -242,14 +232,13 @@ Resources:
             Resource: "*"
       Topics:
         - !Ref SnsRaw
-        # - !Ref SnsClient
+        # - !Ref SnsTrusted
   QueuePolicy:
     Type: AWS::SQS::QueuePolicy
     Properties:
       Queues:
         - !Ref SqsRaw
-        # - !Ref SqsClientSQL
-        # - !Ref SqsClientPredict
+        # - !Ref SqsTrusted
       PolicyDocument:
         Statement:
           - Effect: Allow
@@ -260,7 +249,7 @@ Resources:
   Bucket1:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: adoptai-raw-dev
+      BucketName: adoptai-raw-prod
       NotificationConfiguration:
         TopicConfigurations:
           - Topic: !Ref SnsRaw
@@ -268,82 +257,29 @@ Resources:
   Bucket2:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: adoptai-trusted-dev
-  BucketUtils:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: adoptai-utils-dev
-      # PublicAccessBlockConfiguration:
-      #   BlockPublicAcls: false
-      #   IgnorePublicAcls: false
-      #   BlockPublicPolicy: false
-      #   RestrictPublicBuckets: false
-
-  # BucketPolicy1:
-  #   Type: AWS::S3::BucketPolicy
+      BucketName: adoptai-trusted-prod
+  # Bucket3:
+  #   Type: AWS::S3::Bucket
   #   Properties:
-  #     Bucket: !Ref Bucket1
-  #     PolicyDocument:
-  #       Version: "2012-10-17"
-  #       Statement:
-  #         - Sid: PublicReadGetObject
-  #           Effect: Allow
-  #           Principal: "*"
-  #           Action:
-  #             - s3:GetObject
-  #             - s3:ListBucket
-  #           Resource:
-  #             - !Sub "arn:aws:s3:::adoptai-raw-dev/*"
-  #             - !Sub "arn:aws:s3:::adoptai-raw-dev"
-  # BucketPolicy2:
-  #   Type: AWS::S3::BucketPolicy
-  #   Properties:
-  #     Bucket: !Ref Bucket2
-  #     PolicyDocument:
-  #       Version: "2012-10-17"
-  #       Statement:
-  #         - Sid: PublicReadGetObject
-  #           Effect: Allow
-  #           Principal: "*"
-  #           Action:
-  #             - s3:GetObject
-  #             - s3:ListBucket
-  #           Resource:
-  #             - !Sub "arn:aws:s3:::adoptai-trusted-dev/*"
-  #             - !Sub "arn:aws:s3:::adoptai-trusted-dev"
-  # BucketPolicy3:
-  #   Type: AWS::S3::BucketPolicy
-  #   Properties:
-  #     Bucket: !Ref Bucket1
-  #     PolicyDocument:
-  #       Id: Policy1716672428211
-  #       Version: "2012-10-17"
-  #       Statement:
-  #         - Sid: Stmt1716672427041
-  #           Effect: Allow
-  #           Principal: "*"
-  #           Action: 
-  #             - "s3:GetObject"
-  #           Resource: 
-  #             - !Sub "arn:aws:s3:::adoptai-raw-dev/*"
-
+  #     BucketName: adoptai-client-prod
   LambdaRawTrusted:
     Type: AWS::Lambda::Function
     Properties:
       Timeout: 900
       MemorySize: 5120
       Runtime: python3.8
-      Handler: index.lambda_handler
-      Role: !Sub "arn:aws:iam::671399828934:role/LabRole"
-      FunctionName: adoptai-raw-trusted-dev
+      Handler: raw_trusted/main.lambda_handler
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      FunctionName: adoptai-raw-trusted-prod
       Layers:
         - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
       Environment:
         Variables:
-          BUCKET_RAW: adoptai-raw-dev
-          BUCKET_TRUSTED: adoptai-trusted-dev
+          BUCKET_RAW: adoptai-raw-prod
+          BUCKET_TRUSTED: adoptai-trusted-prod
+          # TRUSTED_CLIENT_TOPIC_ARN: !Ref SnsTrusted
       Code:
-        S3Bucket: adoptai-utils-dev
+        S3Bucket: adoptai-utils-prod
         S3Key: lambda_zip/lambda_package_raw_trusted.zip
   RawPermissionInvokeLambda:
     Type: AWS::Lambda::Permission
@@ -358,103 +294,35 @@ Resources:
       BatchSize: 1
       Enabled: true
       EventSourceArn: !GetAtt SqsRaw.Arn
-      FunctionName: adoptai-raw-trusted-dev
+      FunctionName: !Ref LambdaRawTrusted
   # LambdaTrustedClient:
   #   Type: AWS::Lambda::Function
   #   Properties:
   #     Timeout: 900
-  #     MemorySize: 5120
-  #     PackageType: Image
-  #     Role: arn:aws:iam::671399828934:role/LabRole
-  #     FunctionName: adoptai-trusted-client-dev
-  #     Environment:
-  #       Variables:
-  #         BUCKET_TRUSTED: adoptai-trusted-dev
-  #         BUCKET_CLIENT: adoptai-client-dev
-  #     Code:
-  #       ImageUri: "472105471754.dkr.ecr.us-east-1.amazonaws.com/trusted_client_dev:latest"
-  # LambdaClientSQL:
-  #   Type: AWS::Lambda::Function
-  #   Properties:
-  #     Timeout: 900
   #     MemorySize: 10240
-  #     Runtime: python3.8
-  #     Handler: main.lambda_handler
-  #     Role: arn:aws:iam::671399828934:role/LabRole
-  #     FunctionName: adoptai-client-sql-dev
-  #     Layers:
-  #       - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
+  #     PackageType: Image
+  #     Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+  #     FunctionName: adoptai-trusted-client-prod
   #     Environment:
   #       Variables:
-  #         PASSWORD: "Urubu100"
-  #         SSL_MODE: "require"
-  #         USERNAME: "adoptai_service"
-  #         BUCKET_CLIENT: adoptai-client-dev
-  #         HOSTNAME: "adoptai-database.mysql.database.azure.com"
+  #         USERNAME: admin
+  #         PASSWORD: adoptai123$
+  #         BUCKET_CLIENT: adoptai-client-prod
+  #         BUCKET_TRUSTED: adoptai-trusted-prod
+  #         HOSTNAME: adoptai.ckgyxtx5gtaw.us-east-1.rds.amazonaws.com
   #     Code:
-  #       S3Bucket: adoptai-utils-dev
-  #       S3Key: lambda_zip/lambda_client_sql.zip
-  # ClientSQLPermissionInvokeLambda:
+  #       ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.us-east-1.amazonaws.com/trusted_client_adoptai_prod:latest"
+  # TrustedPermissionInvokeLambda:
   #   Type: AWS::Lambda::Permission
   #   Properties:
-  #     FunctionName: !Ref LambdaClientSQL
+  #     FunctionName: !Ref LambdaTrustedClient
   #     Action: lambda:InvokeFunction
   #     Principal: sqs.amazonaws.com
-  #     SourceArn: !GetAtt SqsClientSQL.Arn
-  # LambdaClientSQLEvent:
+  #     SourceArn: !GetAtt SqsTrusted.Arn
+  # LambdaTrustedClientEvent:
   #   Type: AWS::Lambda::EventSourceMapping
   #   Properties:
   #     BatchSize: 1
   #     Enabled: true
-  #     EventSourceArn: !GetAtt SqsClientSQL.Arn
-  #     FunctionName: !Ref LambdaClientSQL
-  # LambdaModelUpdate:
-  #   Type: AWS::Lambda::Function
-  #   Properties:
-  #     Timeout: 900
-  #     MemorySize: 10240
-  #     Runtime: python3.8
-  #     Handler: main.lambda_handler
-  #     Role: arn:aws:iam::671399828934:role/LabRole
-  #     FunctionName: adoptai-model-update-dev
-  #     Layers:
-  #       - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
-  #     Environment:
-  #       Variables:
-  #         BUCKET_CLIENT: adoptai-client-dev
-  #         BUCKET_UTILS: adoptai-utils-dev
-  #     Code:
-  #       S3Bucket: adoptai-utils-dev
-  #       S3Key: lambda_zip/lambda_package_model_update.zip
-  # LambdaModelPredict:
-  #   Type: AWS::Lambda::Function
-  #   Properties:
-  #     Timeout: 900
-  #     MemorySize: 10240
-  #     Runtime: python3.8
-  #     Handler: main.lambda_handler
-  #     Role: arn:aws:iam::671399828934:role/LabRole
-  #     FunctionName: adoptai-model-predict-dev
-  #     Layers:
-  #       - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
-  #     Environment:
-  #       Variables:
-  #         BUCKET_CLIENT: adoptai-client-dev
-  #         BUCKET_UTILS: adoptai-utils-dev
-  #     Code:
-  #       S3Bucket: adoptai-utils-dev
-  #       S3Key: lambda_zip/lambda_package_model_predict.zip
-  # ClientPredictPermissionInvokeLambda:
-  #   Type: AWS::Lambda::Permission
-  #   Properties:
-  #     FunctionName: !Ref LambdaModelPredict
-  #     Action: lambda:InvokeFunction
-  #     Principal: sqs.amazonaws.com
-  #     SourceArn: !GetAtt SqsClientPredict.Arn
-  # LambdaModelPredictEvent:
-  #   Type: AWS::Lambda::EventSourceMapping
-  #   Properties:
-  #     BatchSize: 1
-  #     Enabled: false
-  #     EventSourceArn: !GetAtt SqsRaw.Arn
-  #     FunctionName: !Ref LambdaModelPredict
+  #     EventSourceArn: !GetAtt SqsTrusted.Arn
+  #     FunctionName: !Ref LambdaTrustedClient
