@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Template para criar um banco de dados RDS MySQL
+
+Resources:
+  MyDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties: 
+      DBInstanceIdentifier: mydbinstance
+      AllocatedStorage: 20
+      DBInstanceClass: db.t3.micro
+      Engine: mysql
+      MasterUsername: masteruser
+      MasterUserPassword: masterpassword123
+      DBName: mydatabase
+      VPCSecurityGroups:
+        - !Ref MyDBSecurityGroup
+      PubliclyAccessible: true
+
+  MyDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDS instance
+      VpcId: vpc-xxxxxxxx
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0  # Allow access from anywhere, change as needed for better security
+
+Outputs:
+  DBEndpoint:
+    Description: The endpoint of the RDS instance
+    Value: !GetAtt MyDBInstance.Endpoint.Address
