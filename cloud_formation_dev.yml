@@ -10,8 +10,10 @@ Metadata:
           default: VPC
         Parameters:
           - VpcCidr
-          - VpcPublicSubnetZone
-          - VpcPublicSubnetCidr
+          - VpcPublicSubnetZoneA
+          - VpcPublicSubnetZoneB
+          - VpcPublicSubnetCidrA
+          - VpcPublicSubnetCidrB
       - Label:
           default: EC2
         Parameters:
@@ -24,9 +26,13 @@ Metadata:
         default: Cliente
       VpcCidr:
         default: VPC CIDR
-      VpcPublicSubnetCidr:
+      VpcPublicSubnetCidrA:
         default: Subnet Publico CIDR
-      VpcPublicSubnetZone:
+      VpcPublicSubnetCidrB:
+        default: Subnet Publico CIDR
+      VpcPublicSubnetZoneA:
+        default: Zona da Subnet Publica
+      VpcPublicSubnetZoneB:
         default: Zona da Subnet Publica
       Ec2KeyPairName:
         default: Chave de Acesso
@@ -45,16 +51,25 @@ Parameters:
     Type: String
     AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
     Description: O bloco CIDR da VPC (ex. 10.10.0.0/24)
-    Default: 10.100.0.0/24
-  VpcPublicSubnetCidr:
+    Default: 10.0.0.0/20
+  VpcPublicSubnetCidrA:
     Type: String
     AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
-    Description: O bloco CIDR da Subnet Publica (ex. 10.10.0.0/24)
-    Default: 10.100.0.0/24
-  VpcPublicSubnetZone:
+    Description: O bloco CIDR da Subnet Pública A (ex. 10.100.1.0/24)
+    Default: 10.0.1.0/24
+  VpcPublicSubnetZoneA:
     Type: AWS::EC2::AvailabilityZone::Name
-    Description: A zona de disponibilidade para criar a Subnet Publica
+    Description: A zona de disponibilidade para criar a Subnet Pública A
     Default: us-east-1a
+  VpcPublicSubnetCidrB:
+    Type: String
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+    Description: O bloco CIDR da Subnet Pública B (ex. 10.100.2.0/24)
+    Default: 10.0.2.0/24
+  VpcPublicSubnetZoneB:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: A zona de disponibilidade para criar a Subnet Pública B
+    Default: us-east-1b
   Ec2KeyPairName:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Chave de acesso a instancia
@@ -75,6 +90,8 @@ Resources:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-${Client}
@@ -105,22 +122,40 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
       RouteTableId: !Ref PublicRouteTable
-  PublicSubnet:
+  PublicSubnetA:
     Type: AWS::EC2::Subnet
     Properties:
-      AvailabilityZone: !Ref VpcPublicSubnetZone
-      CidrBlock: !Ref VpcPublicSubnetCidr
+      AvailabilityZone: !Ref VpcPublicSubnetZoneA
+      CidrBlock: !Ref VpcPublicSubnetCidrA
       MapPublicIpOnLaunch: true
       VpcId: !Ref Vpc
       Tags:
         - Key: Name
-          Value: !Sub ${AWS::StackName}-${Client}-public
-  RouteTableAssociationPublicSubnet:
-    DependsOn: [PublicRouteTable, PublicSubnet]
+          Value: !Sub ${AWS::StackName}-${Client}-public-a
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref VpcPublicSubnetZoneB
+      CidrBlock: !Ref VpcPublicSubnetCidrB
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}-public-b
+  RouteTableAssociationPublicSubnetA:
+    DependsOn: [PublicRouteTable, PublicSubnetA]
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PublicRouteTable
-      SubnetId: !Ref PublicSubnet
+      SubnetId: !Ref PublicSubnetA
+
+  RouteTableAssociationPublicSubnetB:
+    DependsOn: [PublicRouteTable, PublicSubnetB]
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetB
+
   InstanceSecurityGroup:
     DependsOn: Vpc
     Type: AWS::EC2::SecurityGroup
@@ -143,7 +178,7 @@ Resources:
         - Key: Name
           Value: !Sub ${AWS::StackName}-${Client}
   Instance:
-    DependsOn: [RouteTableAssociationPublicSubnet, InstanceSecurityGroup]
+    DependsOn: [RouteTableAssociationPublicSubnetA, RouteTableAssociationPublicSubnetB, InstanceSecurityGroup]
     Type: AWS::EC2::Instance
     Properties:
       KeyName: !Ref Ec2KeyPairName
@@ -154,7 +189,7 @@ Resources:
           Ebs:
             VolumeSize: 30
             VolumeType: gp2
-      SubnetId: !Ref PublicSubnet
+      SubnetId: !Ref PublicSubnetA
       IamInstanceProfile: !Ref Ec2IamInstanceProfile
       UserData:
         Fn::Base64: !Sub |
@@ -262,39 +297,39 @@ Resources:
   #   Type: AWS::S3::Bucket
   #   Properties:
   #     BucketName: adoptai-client-dev
-  LambdaRawTrusted:
-    Type: AWS::Lambda::Function
-    Properties:
-      Timeout: 900
-      MemorySize: 5120
-      Runtime: python3.8
-      Handler: raw_trusted/main.lambda_handler
-      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
-      FunctionName: adoptai-raw-trusted-dev
-      Layers:
-        - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
-      Environment:
-        Variables:
-          BUCKET_RAW: adoptai-raw-dev
-          BUCKET_TRUSTED: adoptai-trusted-dev
-          # TRUSTED_CLIENT_TOPIC_ARN: !Ref SnsTrusted
-      Code:
-        S3Bucket: adoptai-utils-dev
-        S3Key: lambda_zip/lambda_package_raw_trusted.zip
-  RawPermissionInvokeLambda:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref LambdaRawTrusted
-      Action: lambda:InvokeFunction
-      Principal: sqs.amazonaws.com
-      SourceArn: !GetAtt SqsRaw.Arn
-  LambdaRawTrustedEvent:
-    Type: AWS::Lambda::EventSourceMapping
-    Properties:
-      BatchSize: 1
-      Enabled: true
-      EventSourceArn: !GetAtt SqsRaw.Arn
-      FunctionName: !Ref LambdaRawTrusted
+  # LambdaRawTrusted:
+  #   Type: AWS::Lambda::Function
+  #   Properties:
+  #     Timeout: 900
+  #     MemorySize: 5120
+  #     Runtime: python3.8
+  #     Handler: raw_trusted/main.lambda_handler
+  #     Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+  #     FunctionName: adoptai-raw-trusted-dev
+  #     Layers:
+  #       - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
+  #     Environment:
+  #       Variables:
+  #         BUCKET_RAW: adoptai-raw-dev
+  #         BUCKET_TRUSTED: adoptai-trusted-dev
+  #         # TRUSTED_CLIENT_TOPIC_ARN: !Ref SnsTrusted
+  #     Code:
+  #       S3Bucket: adoptai-utils-prod
+  #       S3Key: lambda_zip/lambda_package_raw_trusted.zip
+  # RawPermissionInvokeLambda:
+  #   Type: AWS::Lambda::Permission
+  #   Properties:
+  #     FunctionName: !Ref LambdaRawTrusted
+  #     Action: lambda:InvokeFunction
+  #     Principal: sqs.amazonaws.com
+  #     SourceArn: !GetAtt SqsRaw.Arn
+  # LambdaRawTrustedEvent:
+  #   Type: AWS::Lambda::EventSourceMapping
+  #   Properties:
+  #     BatchSize: 1
+  #     Enabled: true
+  #     EventSourceArn: !GetAtt SqsRaw.Arn
+  #     FunctionName: !Ref LambdaRawTrusted
   # LambdaTrustedClient:
   #   Type: AWS::Lambda::Function
   #   Properties:
