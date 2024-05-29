@@ -19,7 +19,6 @@ Metadata:
         Parameters:
           - Ec2KeyPairName
           - Ec2AmiId
-          - Ec2IamInstanceProfile
           - Ec2JupyterPassword
     ParameterLabels:
       Client:
@@ -38,8 +37,6 @@ Metadata:
         default: Chave de Acesso
       Ec2AmiId:
         default: AMI
-      Ec2IamInstanceProfile:
-        default: IAM Instance Profile Id
       Ec2JupyterPassword:
         default: Senha Jupyter
 Parameters:
@@ -77,10 +74,6 @@ Parameters:
     Type: String
     Description: Id da AMI
     Default: ami-04b70fa74e45c3917 # Ubuntu 24.04
-  Ec2IamInstanceProfile:
-    Type: String
-    Description: O nome do Instance Profile
-    Default: EMR_EC2_DefaultRole
   Ec2JupyterPassword:
     Type: String
     NoEcho: true
@@ -148,14 +141,12 @@ Resources:
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnetA
-
   RouteTableAssociationPublicSubnetB:
     DependsOn: [PublicRouteTable, PublicSubnetB]
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnetB
-
   InstanceSecurityGroup:
     DependsOn: Vpc
     Type: AWS::EC2::SecurityGroup
@@ -171,6 +162,10 @@ Resources:
           FromPort: 22
           ToPort: 22
           CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8888
+          ToPort: 8888
+          CidrIp: 0.0.0.0/0
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
@@ -184,45 +179,47 @@ Resources:
       KeyName: !Ref Ec2KeyPairName
       ImageId: !Ref Ec2AmiId
       InstanceType: t2.small
-      BlockprodiceMappings:
-        - prodiceName: /prod/xvda
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
           Ebs:
             VolumeSize: 30
             VolumeType: gp2
       SubnetId: !Ref PublicSubnetA
-      IamInstanceProfile: !Ref Ec2IamInstanceProfile
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          apt-get update -y
-          apt-get upgrade -y
-          apt-get install -y python3-pip
-          apt-get install -y jupyter-notebook
+          set -e
 
-          touch /etc/systemd/system/jupyter.service
-          echo "[Unit]" > /etc/systemd/system/jupyter.service
-          echo "Description=Jupyter Notebook" >> /etc/systemd/system/jupyter.service
-          echo "[Service]" >> /etc/systemd/system/jupyter.service
-          echo "Type=simple" >> /etc/systemd/system/jupyter.service
-          echo "ExecStart=/opt/jupyter/script/start.sh" >> /etc/systemd/system/jupyter.service
-          echo "Restart=always" >> /etc/systemd/system/jupyter.service
-          echo "RestartSec=10" >> /etc/systemd/system/jupyter.service
-          echo "[Install]" >> /etc/systemd/system/jupyter.service
-          echo "WantedBy=multi-user.target" >> /etc/systemd/system/jupyter.service
+          # Atualizar pacotes
+          sudo apt update -y
+          sudo apt upgrade -y
 
-          mkdir -p /opt/jupyter/notebook
-          mkdir -p /opt/jupyter/script
-          touch /opt/jupyter/script/start.sh
-          echo '#!/bin/bash' > /opt/jupyter/script/start.sh
-          echo '/usr/bin/python3 -m notebook --NotebookApp.notebook_dir=/opt/jupyter/notebook --NotebookApp.allow_origin="*" --NotebookApp.password=$(/usr/bin/python3 -c "from notebook.auth import passwd; print(passwd(\"urubu100\"))") --allow-root --ip 0.0.0.0 --port 80' >> /opt/jupyter/script/start.sh
-          chmod +x /opt/jupyter/script/start.sh
+          # Instalar dependências
+          sudo apt install -y python3-venv
 
-          mkdir -p /root/.jupyter
-          echo "c.NotebookApp.password = u'$(/usr/bin/python3 -c "from notebook.auth import passwd; print(passwd('urubu100'))")'" > /root/.jupyter/jupyter_notebook_config.py
+          # Criar ambiente virtual
+          python3 -m venv /home/ubuntu/jupyter-env
+          source /home/ubuntu/jupyter-env/bin/activate
 
-          systemctl daemon-reload
-          systemctl start jupyter
-          systemctl enable jupyter
+          # Instalar Jupyter no ambiente virtual
+          pip install jupyter
+
+          # Gerar configuração do Jupyter Notebook
+          jupyter notebook --generate-config
+
+          # Configurar Jupyter Notebook
+          echo "c.NotebookApp.password = '$(python3 -c \"from notebook.auth import passwd; print(passwd('${Ec2JupyterPassword}'))\")'" >> /home/ubuntu/.jupyter/jupyter_notebook_config.py
+          echo "c.NotebookApp.ip = '0.0.0.0'" >> /home/ubuntu/.jupyter/jupyter_notebook_config.py
+          echo "c.NotebookApp.open_browser = False" >> /home/ubuntu/.jupyter/jupyter_notebook_config.py
+          echo "c.NotebookApp.allow_origin = '*'" >> /home/ubuntu/.jupyter/jupyter_notebook_config.py
+
+          # Criar diretório para notebooks
+          sudo mkdir -p /opt/jupyter/notebook
+          sudo chmod 777 /opt/jupyter/notebook
+
+          # Configurar Jupyter para iniciar automaticamente na inicialização do
+          echo "@reboot ubuntu source /home/ubuntu/jupyter-env/bin/activate && jupyter notebook --notebook-dir=/opt/jupyter/notebook" | sudo tee -a /etc/crontab
+
       SecurityGroupIds:
         - !Ref InstanceSecurityGroup
       Tags:
