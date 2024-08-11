@@ -228,26 +228,26 @@ Resources:
   SqsRaw:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: adoptai-raw-prod-sqs
+      QueueName: adoptai-raw-dev-sqs
       MessageRetentionPeriod: 1209600
       VisibilityTimeout: 900
   SnsRaw:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: adoptai-raw-prod-sns
+      TopicName: adoptai-raw-dev-sns
       Subscription:
         - Endpoint: !GetAtt SqsRaw.Arn
           Protocol: sqs
   # SqsTrusted:
   #   Type: AWS::SQS::Queue
   #   Properties:
-  #     QueueName: adoptai-trusted-prod-sqs
+  #     QueueName: adoptai-trusted-dev-sqs
   #     MessageRetentionPeriod: 1209600
   #     VisibilityTimeout: 900
   # SnsTrusted:
   #   Type: AWS::SNS::Topic
   #   Properties:
-  #     TopicName: adoptai-trusted-prod-sns
+  #     TopicName: adoptai-trusted-dev-sns
   #     Subscription:
   #       - Endpoint: !GetAtt SqsTrusted.Arn
   #         Protocol: sqs
@@ -281,7 +281,7 @@ Resources:
   Bucket1:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: adoptai-raw-prod
+      BucketName: adoptai-raw-dev
       NotificationConfiguration:
         TopicConfigurations:
           - Topic: !Ref SnsRaw
@@ -289,11 +289,11 @@ Resources:
   Bucket2:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: adoptai-trusted-prod
+      BucketName: adoptai-trusted-dev
   # Bucket3:
   #   Type: AWS::S3::Bucket
   #   Properties:
-  #     BucketName: adoptai-client-prod
+  #     BucketName: adoptai-client-dev
   # LambdaRawTrusted:
   #   Type: AWS::Lambda::Function
   #   Properties:
@@ -302,13 +302,13 @@ Resources:
   #     Runtime: python3.8
   #     Handler: raw_trusted/main.lambda_handler
   #     Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
-  #     FunctionName: adoptai-raw-trusted-prod
+  #     FunctionName: adoptai-raw-trusted-dev
   #     Layers:
   #       - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
   #     Environment:
   #       Variables:
-  #         BUCKET_RAW: adoptai-raw-prod
-  #         BUCKET_TRUSTED: adoptai-trusted-prod
+  #         BUCKET_RAW: adoptai-raw-dev
+  #         BUCKET_TRUSTED: adoptai-trusted-dev
   #         # TRUSTED_CLIENT_TOPIC_ARN: !Ref SnsTrusted
   #     Code:
   #       S3Bucket: adoptai-utils-prod
@@ -334,13 +334,13 @@ Resources:
   #     MemorySize: 10240
   #     PackageType: Image
   #     Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
-  #     FunctionName: adoptai-trusted-client-prod
+  #     FunctionName: adoptai-trusted-client-dev
   #     Environment:
   #       Variables:
   #         USERNAME: admin
   #         PASSWORD: adoptai123$
-  #         BUCKET_CLIENT: adoptai-client-prod
-  #         BUCKET_TRUSTED: adoptai-trusted-prod
+  #         BUCKET_CLIENT: adoptai-client-dev
+  #         BUCKET_TRUSTED: adoptai-trusted-dev
   #         HOSTNAME: adoptai.ckgyxtx5gtaw.us-east-1.rds.amazonaws.com
   #     Code:
   #       ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.us-east-1.amazonaws.com/trusted_client_adoptai_prod:latest"

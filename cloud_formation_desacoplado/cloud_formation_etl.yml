@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: 2010-09-09
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Global
+        Parameters:
+          - Client
+    ParameterLabels:
+      Client:
+        default: Cliente
+Parameters:
+  Client:
+    Type: String
+    Description: O nome do cliente
+    Default: sptech
+Resources:
+  SqsRaw:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: adoptai-raw-dev-sqs
+      MessageRetentionPeriod: 1209600
+      VisibilityTimeout: 900
+  SnsRaw:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: adoptai-raw-dev-sns
+      Subscription:
+        - Endpoint: !GetAtt SqsRaw.Arn
+          Protocol: sqs
+  # SqsTrusted:
+  #   Type: AWS::SQS::Queue
+  #   Properties:
+  #     QueueName: adoptai-trusted-dev-sqs
+  #     MessageRetentionPeriod: 1209600
+  #     VisibilityTimeout: 900
+  # SnsTrusted:
+  #   Type: AWS::SNS::Topic
+  #   Properties:
+  #     TopicName: adoptai-trusted-dev-sns
+  #     Subscription:
+  #       - Endpoint: !GetAtt SqsTrusted.Arn
+  #         Protocol: sqs
+  TopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action:
+              - "sns:Publish"
+              - "sns:GetTopicAttributes"
+            Principal: "*"
+            Resource: "*"
+      Topics:
+        - !Ref SnsRaw
+        # - !Ref SnsTrusted
+  QueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref SqsRaw
+        # - !Ref SqsTrusted
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: "*"
+  Bucket1:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: adoptai-raw-dev
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Topic: !Ref SnsRaw
+            Event: s3:ObjectCreated:*
+  Bucket2:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: adoptai-trusted-dev
+  # Bucket3:
+  #   Type: AWS::S3::Bucket
+  #   Properties:
+  #     BucketName: adoptai-client-dev
+  # LambdaRawTrusted:
+  #   Type: AWS::Lambda::Function
+  #   Properties:
+  #     Timeout: 900
+  #     MemorySize: 5120
+  #     Runtime: python3.8
+  #     Handler: raw_trusted/main.lambda_handler
+  #     Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+  #     FunctionName: adoptai-raw-trusted-dev
+  #     Layers:
+  #       - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
+  #     Environment:
+  #       Variables:
+  #         BUCKET_RAW: adoptai-raw-dev
+  #         BUCKET_TRUSTED: adoptai-trusted-dev
+  #         # TRUSTED_CLIENT_TOPIC_ARN: !Ref SnsTrusted
+  #     Code:
+  #       S3Bucket: adoptai-utils-prod
+  #       S3Key: lambda_zip/lambda_package_raw_trusted.zip
+  # RawPermissionInvokeLambda:
+  #   Type: AWS::Lambda::Permission
+  #   Properties:
+  #     FunctionName: !Ref LambdaRawTrusted
+  #     Action: lambda:InvokeFunction
+  #     Principal: sqs.amazonaws.com
+  #     SourceArn: !GetAtt SqsRaw.Arn
+  # LambdaRawTrusteprodent:
+  #   Type: AWS::Lambda::EventSourceMapping
+  #   Properties:
+  #     BatchSize: 1
+  #     Enabled: true
+  #     EventSourceArn: !GetAtt SqsRaw.Arn
+  #     FunctionName: !Ref LambdaRawTrusted
+  # LambdaTrustedClient:
+  #   Type: AWS::Lambda::Function
+  #   Properties:
+  #     Timeout: 900
+  #     MemorySize: 10240
+  #     PackageType: Image
+  #     Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+  #     FunctionName: adoptai-trusted-client-dev
+  #     Environment:
+  #       Variables:
+  #         USERNAME: admin
+  #         PASSWORD: adoptai123$
+  #         BUCKET_CLIENT: adoptai-client-dev
+  #         BUCKET_TRUSTED: adoptai-trusted-dev
+  #         HOSTNAME: adoptai.ckgyxtx5gtaw.us-east-1.rds.amazonaws.com
+  #     Code:
+  #       ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.us-east-1.amazonaws.com/trusted_client_adoptai_prod:latest"
+  # TrustedPermissionInvokeLambda:
+  #   Type: AWS::Lambda::Permission
+  #   Properties:
+  #     FunctionName: !Ref LambdaTrustedClient
+  #     Action: lambda:InvokeFunction
+  #     Principal: sqs.amazonaws.com
+  #     SourceArn: !GetAtt SqsTrusted.Arn
+  # LambdaTrustedClientEvent:
+  #   Type: AWS::Lambda::EventSourceMapping
+  #   Properties:
+  #     BatchSize: 1
+  #     Enabled: true
+  #     EventSourceArn: !GetAtt SqsTrusted.Arn
+  #     FunctionName: !Ref LambdaTrustedClient
+  #     FunctionName: !Ref LambdaTrustedClient

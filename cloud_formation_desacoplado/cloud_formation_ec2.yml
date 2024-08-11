@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: 2010-09-09
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Global
+        Parameters:
+          - Client
+      - Label:
+          default: EC2
+        Parameters:
+          - Ec2KeyPairName
+          - Ec2AmiId
+          - Ec2JupyterPassword
+    ParameterLabels:
+      Client:
+        default: Cliente
+      Ec2KeyPairName:
+        default: Chave de Acesso
+      Ec2AmiId:
+        default: AMI
+      Ec2JupyterPassword:
+        default: Senha Jupyter
+Parameters:
+  Client:
+    Type: String
+    Description: O nome do cliente
+    Default: sptech
+  Ec2KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Chave de acesso a instancia
+  Ec2AmiId:
+    Type: String
+    Description: Id da AMI
+    Default: ami-04b70fa74e45c3917 # Ubuntu 24.04
+  Ec2JupyterPassword:
+    Type: String
+    NoEcho: true
+    Description: A senha de acesso ao jupyter
+Resources:
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref Ec2KeyPairName
+      ImageId: !Ref Ec2AmiId
+      InstanceType: t2.small
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp2
+      SubnetId: !ImportValue PublicSubnetA
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+
+          # Atualizar pacotes
+          sudo apt update -y
+          sudo apt upgrade -y
+
+      SecurityGroupIds:
+        - !ImportValue InstanceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}-modelos
+

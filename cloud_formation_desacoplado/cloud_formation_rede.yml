@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: 2010-09-09
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Global
+        Parameters:
+          - Client
+      - Label:
+          default: VPC
+        Parameters:
+          - VpcCidr
+          - VpcPublicSubnetZoneA
+          - VpcPublicSubnetZoneB
+          - VpcPublicSubnetCidrA
+          - VpcPublicSubnetCidrB
+    ParameterLabels:
+      Client:
+        default: Cliente
+      VpcCidr:
+        default: VPC CIDR
+      VpcPublicSubnetCidrA:
+        default: Subnet Publico CIDR
+      VpcPublicSubnetCidrB:
+        default: Subnet Publico CIDR
+      VpcPublicSubnetZoneA:
+        default: Zona da Subnet Publica
+      VpcPublicSubnetZoneB:
+        default: Zona da Subnet Publica
+Parameters:
+  Client:
+    Type: String
+    Description: O nome do cliente
+    Default: sptech
+  VpcCidr:
+    Type: String
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+    Description: O bloco CIDR da VPC (ex. 10.10.0.0/24)
+    Default: 10.0.0.0/20
+  VpcPublicSubnetCidrA:
+    Type: String
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+    Description: O bloco CIDR da Subnet Pública A (ex. 10.100.1.0/24)
+    Default: 10.0.1.0/24
+  VpcPublicSubnetZoneA:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: A zona de disponibilidade para criar a Subnet Pública A
+    Default: us-east-1a
+  VpcPublicSubnetCidrB:
+    Type: String
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+    Description: O bloco CIDR da Subnet Pública B (ex. 10.100.2.0/24)
+    Default: 10.0.2.0/24
+  VpcPublicSubnetZoneB:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: A zona de disponibilidade para criar a Subnet Pública B
+    Default: us-east-1b
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}
+  InternetGatewayAttachment:
+    DependsOn: [InternetGateway, Vpc]
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref Vpc
+  PublicRouteTable:
+    DependsOn: Vpc
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}-public
+  PublicRouteTableRouteInternet:
+    DependsOn: [PublicRouteTable, InternetGateway]
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref VpcPublicSubnetZoneA
+      CidrBlock: !Ref VpcPublicSubnetCidrA
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}-public-a
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref VpcPublicSubnetZoneB
+      CidrBlock: !Ref VpcPublicSubnetCidrB
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}-public-b
+  RouteTableAssociationPublicSubnetA:
+    DependsOn: [PublicRouteTable, PublicSubnetA]
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetA
+  RouteTableAssociationPublicSubnetB:
+    DependsOn: [PublicRouteTable, PublicSubnetB]
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetB
+  InstanceSecurityGroup:
+    DependsOn: Vpc
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow only https ingress
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8888
+          ToPort: 8888
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-${Client}
+Outputs:
+  Vpc:
+    Value: !Ref Vpc
+    Export:
+      Name: Vpc
+  PublicSubnetA:
+    Value: !Ref PublicSubnetA
+    Export:
+      Name: PublicSubnetA
+  PublicSubnetB: 
+    Value: !Ref PublicSubnetB
+    Export:
+      Name: PublicSubnetB
+  RouteTableAssociationPublicSubnetA:
+    Value: !Ref RouteTableAssociationPublicSubnetA
+    Export:
+      Name: RouteTableAssociationPublicSubnetA
+  RouteTableAssociationPublicSubnetB:
+    Value: !Ref RouteTableAssociationPublicSubnetB
+    Export:
+      Name: RouteTableAssociationPublicSubnetB
+  InstanceSecurityGroup:
+    Value: !Ref InstanceSecurityGroup
+    Export:
+      Name: InstanceSecurityGroup
