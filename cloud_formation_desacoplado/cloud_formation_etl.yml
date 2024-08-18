@@ -18,16 +18,19 @@ Resources:
   SqsRaw:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: adoptai-raw-dev-sqs
+      QueueName: adoptai-raw-dev-b-sqs
       MessageRetentionPeriod: 1209600
       VisibilityTimeout: 900
+    DependsOn: CustomResource
+
   SnsRaw:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: adoptai-raw-dev-sns
+      TopicName: adoptai-raw-dev-b-sns
       Subscription:
         - Endpoint: !GetAtt SqsRaw.Arn
           Protocol: sqs
+    DependsOn: CustomResource
 
   TopicPolicy:
     Type: AWS::SNS::TopicPolicy
@@ -42,6 +45,8 @@ Resources:
             Resource: "*"
       Topics:
         - !Ref SnsRaw
+    DependsOn: CustomResource
+
   QueuePolicy:
     Type: AWS::SQS::QueuePolicy
     Properties:
@@ -54,23 +59,28 @@ Resources:
               Service: sns.amazonaws.com
             Action: sqs:SendMessage
             Resource: "*"
+    DependsOn: CustomResource
 
   BucketRaw:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: adoptai-raw-dev
+      BucketName: adoptai-raw-dev-b
       NotificationConfiguration:
         TopicConfigurations:
           - Topic: !Ref SnsRaw
             Event: s3:ObjectCreated:*
+    DependsOn: CustomResource
+
   BucketTrusted:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: adoptai-trusted-dev
+      BucketName: adoptai-trusted-dev-b
+    DependsOn: CustomResource
+
   BucketUtils:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: adoptai-utils-dev
+      BucketName: adoptai-utils-dev-b
 
   CustomLambdaFunction:
     Type: AWS::Lambda::Function
@@ -85,40 +95,46 @@ Resources:
           import urllib.request
           import zipfile
           import os
+          import cfnresponse
 
           def handler(event, context):
 
-              bucket_utils = os.environ['BUCKET_TRUSTED']
+              try:
+                  bucket_utils = os.environ['BUCKET_UTILS']
 
-              s3 = boto3.client('s3')
-              url = "https://raw.githubusercontent.com/Grupo-09-2024-SPTECH/infra-cloud/main/Lambda%20Codes/raw_trusted/main.py"  # URL do arquivo no GitHub
-              file_path = "/tmp/main.py"
-              zip_path = "/tmp/lambda_package_raw_trusted.zip"
-              
-              # Download do arquivo do GitHub
-              urllib.request.urlretrieve(url, file_path)
-              
-              # Compactação do arquivo em um arquivo ZIP
-              with zipfile.ZipFile(zip_path, 'w') as zipf:
-                  # Adiciona o arquivo ao ZIP com o caminho dentro do ZIP especificado
-                  zipf.write(file_path, 'raw_trusted/main.py')
-              
-              # Upload do arquivo ZIP para o S3
-              s3.upload_file(zip_path, bucket_utils, 'lambda_zip/lambda_package_raw_trusted.zip')
-              
-              return {
-                  'statusCode': 200,
-                  'body': 'Upload and zip successful'
-              }
+                  s3 = boto3.client('s3')
+                  url = "https://raw.githubusercontent.com/Grupo-09-2024-SPTECH/infra-cloud/main/Lambda%20Codes/raw_trusted/main.py"  # URL do arquivo no GitHub
+                  file_path = "/tmp/main.py"
+                  zip_path = "/tmp/lambda_package_raw_trusted.zip"
+                  
+                  # Download do arquivo do GitHub
+                  urllib.request.urlretrieve(url, file_path)
+                  
+                  # Compactação do arquivo em um arquivo ZIP
+                  with zipfile.ZipFile(zip_path, 'w') as zipf:
+                      # Adiciona o arquivo ao ZIP com o caminho dentro do ZIP especificado
+                      zipf.write(file_path, 'raw_trusted/main.py')
+                  
+                  # Upload do arquivo ZIP para o S3
+                  s3.upload_file(zip_path, bucket_utils, 'lambda_zip/lambda_package_raw_trusted.zip')
+                  
+                  # Enviar resposta de sucesso para o CloudFormation
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Message': 'Upload and zip successful'})
+
+              except Exception as e:
+                  # Em caso de falha, enviar resposta de falha para o CloudFormation
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Message': str(e)})
+
       Environment:
         Variables:
-          BUCKET_UTILS: adoptai-utils-dev
+          BUCKET_UTILS: adoptai-utils-dev-b
 
   CustomResource:
     Type: Custom::UploadFile
     Properties:
       ServiceToken: !GetAtt CustomLambdaFunction.Arn
-      BUCKET_UTILS: adoptai-utils-dev
+      BUCKET_UTILS: adoptai-utils-dev-b
+    DependsOn: BucketUtils
 
   LambdaRawTrusted:
     Type: AWS::Lambda::Function
@@ -128,16 +144,17 @@ Resources:
       Runtime: python3.8
       Handler: raw_trusted/main.lambda_handler
       Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
-      FunctionName: adoptai-raw-trusted-dev
+      FunctionName: adoptai-raw-trusted-dev-b
       Layers:
         - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
       Environment:
         Variables:
-          BUCKET_RAW: adoptai-raw-dev
-          BUCKET_TRUSTED: adoptai-trusted-dev
+          BUCKET_RAW: adoptai-raw-dev-b
+          BUCKET_TRUSTED: adoptai-trusted-dev-b
       Code:
-        S3Bucket: adoptai-utils-dev
+        S3Bucket: adoptai-utils-dev-b
         S3Key: lambda_zip/lambda_package_raw_trusted.zip
+    DependsOn: CustomResource
   
   RawPermissionInvokeLambda:
     Type: AWS::Lambda::Permission
@@ -146,6 +163,7 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: sqs.amazonaws.com
       SourceArn: !GetAtt SqsRaw.Arn
+    DependsOn: LambdaRawTrusted
 
   LambdaRawTrusteprodent:
     Type: AWS::Lambda::EventSourceMapping
@@ -154,3 +172,4 @@ Resources:
       Enabled: true
       EventSourceArn: !GetAtt SqsRaw.Arn
       FunctionName: !Ref LambdaRawTrusted
+    DependsOn: LambdaRawTrusted
