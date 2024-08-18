@@ -28,19 +28,7 @@ Resources:
       Subscription:
         - Endpoint: !GetAtt SqsRaw.Arn
           Protocol: sqs
-  # SqsTrusted:
-  #   Type: AWS::SQS::Queue
-  #   Properties:
-  #     QueueName: adoptai-trusted-dev-sqs
-  #     MessageRetentionPeriod: 1209600
-  #     VisibilityTimeout: 900
-  # SnsTrusted:
-  #   Type: AWS::SNS::Topic
-  #   Properties:
-  #     TopicName: adoptai-trusted-dev-sns
-  #     Subscription:
-  #       - Endpoint: !GetAtt SqsTrusted.Arn
-  #         Protocol: sqs
+
   TopicPolicy:
     Type: AWS::SNS::TopicPolicy
     Properties:
@@ -54,13 +42,11 @@ Resources:
             Resource: "*"
       Topics:
         - !Ref SnsRaw
-        # - !Ref SnsTrusted
   QueuePolicy:
     Type: AWS::SQS::QueuePolicy
     Properties:
       Queues:
         - !Ref SqsRaw
-        # - !Ref SqsTrusted
       PolicyDocument:
         Statement:
           - Effect: Allow
@@ -68,7 +54,8 @@ Resources:
               Service: sns.amazonaws.com
             Action: sqs:SendMessage
             Resource: "*"
-  Bucket1:
+
+  BucketRaw:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: adoptai-raw-dev
@@ -76,76 +63,94 @@ Resources:
         TopicConfigurations:
           - Topic: !Ref SnsRaw
             Event: s3:ObjectCreated:*
-  Bucket2:
+  BucketTrusted:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: adoptai-trusted-dev
-  # Bucket3:
-  #   Type: AWS::S3::Bucket
-  #   Properties:
-  #     BucketName: adoptai-client-dev
-  # LambdaRawTrusted:
-  #   Type: AWS::Lambda::Function
-  #   Properties:
-  #     Timeout: 900
-  #     MemorySize: 5120
-  #     Runtime: python3.8
-  #     Handler: raw_trusted/main.lambda_handler
-  #     Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
-  #     FunctionName: adoptai-raw-trusted-dev
-  #     Layers:
-  #       - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
-  #     Environment:
-  #       Variables:
-  #         BUCKET_RAW: adoptai-raw-dev
-  #         BUCKET_TRUSTED: adoptai-trusted-dev
-  #         # TRUSTED_CLIENT_TOPIC_ARN: !Ref SnsTrusted
-  #     Code:
-  #       S3Bucket: adoptai-utils-prod
-  #       S3Key: lambda_zip/lambda_package_raw_trusted.zip
-  # RawPermissionInvokeLambda:
-  #   Type: AWS::Lambda::Permission
-  #   Properties:
-  #     FunctionName: !Ref LambdaRawTrusted
-  #     Action: lambda:InvokeFunction
-  #     Principal: sqs.amazonaws.com
-  #     SourceArn: !GetAtt SqsRaw.Arn
-  # LambdaRawTrusteprodent:
-  #   Type: AWS::Lambda::EventSourceMapping
-  #   Properties:
-  #     BatchSize: 1
-  #     Enabled: true
-  #     EventSourceArn: !GetAtt SqsRaw.Arn
-  #     FunctionName: !Ref LambdaRawTrusted
-  # LambdaTrustedClient:
-  #   Type: AWS::Lambda::Function
-  #   Properties:
-  #     Timeout: 900
-  #     MemorySize: 10240
-  #     PackageType: Image
-  #     Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
-  #     FunctionName: adoptai-trusted-client-dev
-  #     Environment:
-  #       Variables:
-  #         USERNAME: admin
-  #         PASSWORD: adoptai123$
-  #         BUCKET_CLIENT: adoptai-client-dev
-  #         BUCKET_TRUSTED: adoptai-trusted-dev
-  #         HOSTNAME: adoptai.ckgyxtx5gtaw.us-east-1.rds.amazonaws.com
-  #     Code:
-  #       ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.us-east-1.amazonaws.com/trusted_client_adoptai_prod:latest"
-  # TrustedPermissionInvokeLambda:
-  #   Type: AWS::Lambda::Permission
-  #   Properties:
-  #     FunctionName: !Ref LambdaTrustedClient
-  #     Action: lambda:InvokeFunction
-  #     Principal: sqs.amazonaws.com
-  #     SourceArn: !GetAtt SqsTrusted.Arn
-  # LambdaTrustedClientEvent:
-  #   Type: AWS::Lambda::EventSourceMapping
-  #   Properties:
-  #     BatchSize: 1
-  #     Enabled: true
-  #     EventSourceArn: !GetAtt SqsTrusted.Arn
-  #     FunctionName: !Ref LambdaTrustedClient
-  #     FunctionName: !Ref LambdaTrustedClient
+  BucketUtils:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: adoptai-utils-dev
+
+  CustomLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      Runtime: python3.9
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import boto3
+          import urllib.request
+          import zipfile
+          import os
+
+          def handler(event, context):
+
+              bucket_utils = os.environ['BUCKET_TRUSTED']
+
+              s3 = boto3.client('s3')
+              url = "https://raw.githubusercontent.com/Grupo-09-2024-SPTECH/infra-cloud/df720ad6e54e911d26a9c58bcd151a1e2509a2c1/Lambda%20Codes/main.py"  # URL do arquivo no GitHub
+              file_path = "/tmp/main.py"
+              zip_path = "/tmp/lambda_package_raw_trusted.zip"
+              
+              # Download do arquivo do GitHub
+              urllib.request.urlretrieve(url, file_path)
+              
+              # Compactação do arquivo em um arquivo ZIP
+              with zipfile.ZipFile(zip_path, 'w') as zipf:
+                  # Adiciona o arquivo ao ZIP com o caminho dentro do ZIP especificado
+                  zipf.write(file_path, 'raw_trusted/main.py')
+              
+              # Upload do arquivo ZIP para o S3
+              s3.upload_file(zip_path, bucket_utils, 'lambda_zip/lambda_package_raw_trusted.zip')
+              
+              return {
+                  'statusCode': 200,
+                  'body': 'Upload and zip successful'
+              }
+      Environment:
+        Variables:
+          BUCKET_UTILS: adoptai-utils-dev
+
+  CustomResource:
+    Type: Custom::UploadFile
+    Properties:
+      ServiceToken: !GetAtt CustomLambdaFunction.Arn
+      BUCKET_UTILS: adoptai-utils-dev
+
+  LambdaRawTrusted:
+    Type: AWS::Lambda::Function
+    Properties:
+      Timeout: 900
+      MemorySize: 5120
+      Runtime: python3.8
+      Handler: raw_trusted/main.lambda_handler
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      FunctionName: adoptai-raw-trusted-dev
+      Layers:
+        - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
+      Environment:
+        Variables:
+          BUCKET_RAW: adoptai-raw-dev
+          BUCKET_TRUSTED: adoptai-trusted-dev
+      Code:
+        S3Bucket: adoptai-utils-dev
+        S3Key: lambda_zip/lambda_package_raw_trusted.zip
+  
+  RawPermissionInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaRawTrusted
+      Action: lambda:InvokeFunction
+      Principal: sqs.amazonaws.com
+      SourceArn: !GetAtt SqsRaw.Arn
+
+  LambdaRawTrusteprodent:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1
+      Enabled: true
+      EventSourceArn: !GetAtt SqsRaw.Arn
+      FunctionName: !Ref LambdaRawTrusted
