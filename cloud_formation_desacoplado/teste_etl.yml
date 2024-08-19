@@ -98,25 +98,45 @@ Resources:
           import cfnresponse
 
           def handler(event, context):
-
               try:
                   bucket_utils = os.environ['BUCKET_UTILS']
 
                   s3 = boto3.client('s3')
-                  url = "https://raw.githubusercontent.com/Grupo-09-2024-SPTECH/infra-cloud/main/Lambda%20Codes/raw_trusted/main.py"  # URL do arquivo no GitHub
-                  file_path = "/tmp/main.py"
-                  zip_path = "/tmp/lambda_package_raw_trusted.zip"
+
+                  # URLs dos arquivos
+                  python_url = "https://raw.githubusercontent.com/Grupo-09-2024-SPTECH/infra-cloud/main/Lambda%20Codes/raw_trusted/main.py"
+                  package_url = "https://github.com/Grupo-09-2024-SPTECH/infra-cloud/raw/main/Lambda%20Codes/modules_python/sklearn.zip"
                   
-                  # Download do arquivo do GitHub
-                  urllib.request.urlretrieve(url, file_path)
-                  
-                  # Compactação do arquivo em um arquivo ZIP
-                  with zipfile.ZipFile(zip_path, 'w') as zipf:
-                      # Adiciona o arquivo ao ZIP com o caminho dentro do ZIP especificado
-                      zipf.write(file_path, 'raw_trusted/main.py')
-                  
-                  # Upload do arquivo ZIP para o S3
-                  s3.upload_file(zip_path, bucket_utils, 'lambda_zip/lambda_package_raw_trusted.zip')
+                  # Caminhos temporários
+                  python_file_path = "/tmp/main.py"
+                  package_zip_path = "/tmp/sklearn.zip"
+                  extracted_package_path = "/tmp/sklearn"
+                  combined_zip_path = "/tmp/lambda_package_raw_trusted.zip"
+
+                  # Baixar o arquivo Python
+                  urllib.request.urlretrieve(python_url, python_file_path)
+
+                  # Baixar o pacote de dependências
+                  urllib.request.urlretrieve(package_url, package_zip_path)
+
+                  # Descompactar o pacote de dependências
+                  with zipfile.ZipFile(package_zip_path, 'r') as zip_ref:
+                      zip_ref.extractall(extracted_package_path)
+
+                  # Compactar o arquivo Python e as dependências em um único arquivo ZIP
+                  with zipfile.ZipFile(combined_zip_path, 'w') as zipf:
+                      # Adicionar o arquivo Python ao ZIP
+                      zipf.write(python_file_path, 'raw_trusted/main.py')
+                      # Adicionar as dependências ao ZIP
+                      for root, dirs, files in os.walk(extracted_package_path):
+                          for file in files:
+                              file_path = os.path.join(root, file)
+                              # Adicionar arquivos com o caminho relativo dentro do ZIP
+                              arcname = os.path.relpath(file_path, extracted_package_path)
+                              zipf.write(file_path, arcname=os.path.join('sklearn', arcname))
+
+                  # Fazer o upload do arquivo ZIP para o S3
+                  s3.upload_file(combined_zip_path, bucket_utils, 'lambda_zip/lambda_package_raw_trusted.zip')
 
                   # Enviar resposta de sucesso para o CloudFormation
                   cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Message': 'Upload and zip successful'})
