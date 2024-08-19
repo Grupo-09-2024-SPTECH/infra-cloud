@@ -117,7 +117,13 @@ Resources:
                   
                   # Upload do arquivo ZIP para o S3
                   s3.upload_file(zip_path, bucket_utils, 'lambda_zip/lambda_package_raw_trusted.zip')
-                  
+
+
+                  url_modules = "https://github.com/Grupo-09-2024-SPTECH/infra-cloud/raw/main/Lambda%20Codes/modules_python.zip"
+                  file_path_modules = "/tmp/modules_python.zip"
+                  urllib.request.urlretrieve(url_modules, file_path_modules)
+                  s3.upload_file(file_path_modules, bucket_utils, 'lambda_zip_modules/modules_python.zip')
+
                   # Enviar resposta de sucesso para o CloudFormation
                   cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Message': 'Upload and zip successful'})
 
