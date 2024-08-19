@@ -1,6 +1,5 @@
 import os
 import json
-# import boto3
 import awswrangler as wr
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
