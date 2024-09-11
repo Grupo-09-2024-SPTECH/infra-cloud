@@ -1,6 +1,7 @@
 import os
 import json
-import awswrangler as wr
+# import awswrangler as wr
+from awswrangler import s3
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
@@ -20,7 +21,8 @@ def lambda_handler(event, context):  # sourcery skip: extract-method
         print(f'{path_raw = }')
 
         # Lê o arquivo CSV do S3 raw
-        df = wr.s3.read_csv(path=path_raw)
+        # df = wr.s3.read_csv(path=path_raw)
+        df = s3.read_csv(path=path_raw)
 
         df_tratado = apply_all_rules(df)
 
@@ -30,7 +32,8 @@ def lambda_handler(event, context):  # sourcery skip: extract-method
         print(f'write s3: {path_trusted = }')
 
         # Grava o DataFrame como CSV no S3 trusted
-        wr.s3.to_csv(
+        # wr.s3.to_csv(
+        s3.to_csv(
             df=df_tratado,
             path=path_trusted,
             index=False
