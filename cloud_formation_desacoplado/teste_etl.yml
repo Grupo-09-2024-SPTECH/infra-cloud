@@ -147,7 +147,7 @@ Resources:
       FunctionName: adoptai-raw-trusted-dev-d
       Layers:
         - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
-        - arn:aws:lambda:us-east-1:446751924810:layer:python-3-8-scikit-learn-0-23-1:2
+        # - arn:aws:lambda:us-east-1:446751924810:layer:python-3-8-scikit-learn-0-23-1:2
       Environment:
         Variables:
           BUCKET_RAW: adoptai-raw-dev-d
