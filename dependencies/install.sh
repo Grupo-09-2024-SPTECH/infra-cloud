@@ -1,7 +1,7 @@
 #!/bin/bash
 sudo apt update -y
 sudo apt upgrade -y
-sudo apt-get install python3-pip -y
+sudo apt-get install python3 -y
 sudo apt-get install python3-pip -y
 sudo apt-get install python3-venv -y
 
@@ -29,8 +29,6 @@ echo "c.NotebookApp.token = ''" >> ~/.jupyter/jupyter_notebook_config.py
 echo "c.NotebookApp.password = ''" >> ~/.jupyter/jupyter_notebook_config.py
 
 git clone https://github.com/Grupo-09-2024-SPTECH/artificial-intelligence.git
-
-touch ./artificial-intelligence/script/util/credentials.py
 
 # Inicia o Jupyter Lab sem autenticação
 jupyter-lab --ip 0.0.0.0 --allow-root
