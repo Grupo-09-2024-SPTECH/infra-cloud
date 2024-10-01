@@ -30,5 +30,7 @@ echo "c.NotebookApp.password = ''" >> ~/.jupyter/jupyter_notebook_config.py
 
 git clone https://github.com/Grupo-09-2024-SPTECH/artificial-intelligence.git
 
+touch ./artificial-intelligence/script/util/credentials.py
+
 # Inicia o Jupyter Lab sem autenticação
 jupyter-lab --ip 0.0.0.0 --allow-root
