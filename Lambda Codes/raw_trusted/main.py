@@ -57,9 +57,13 @@ def remove_variable_columns(df):
     dados_processados = df.drop(columns=colunas_descritivas)
     return dados_processados
 
+def remove_unused_columns(df):
+    columns_to_remove = ['Name', 'RescuerID']
+    return df.drop(columns=columns_to_remove)
 
 # Aplicando todas as regras
 def apply_all_rules(df):
     df = remove_ids(df)
     df = remove_variable_columns(df)
+    df = remove_unused_columns(df)
     return df
