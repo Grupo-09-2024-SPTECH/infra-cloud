@@ -18,7 +18,7 @@ Resources:
   SqsRaw:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: adoptai-raw-dev-sqs
+      QueueName: adoptai-raw-prod-tcc-sqs
       MessageRetentionPeriod: 1209600
       VisibilityTimeout: 900
     DependsOn: CustomResource
@@ -26,7 +26,7 @@ Resources:
   SnsRaw:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: adoptai-raw-dev-sns
+      TopicName: adoptai-raw-prod-tcc-sns
       Subscription:
         - Endpoint: !GetAtt SqsRaw.Arn
           Protocol: sqs
@@ -64,7 +64,7 @@ Resources:
   BucketRaw:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: adoptai-raw-dev
+      BucketName: adoptai-raw-prod-tcc
       NotificationConfiguration:
         TopicConfigurations:
           - Topic: !Ref SnsRaw
@@ -74,13 +74,13 @@ Resources:
   BucketTrusted:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: adoptai-trusted-dev
+      BucketName: adoptai-trusted-prod-tcc
     DependsOn: CustomResource
 
   BucketUtils:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: adoptai-utils-dev
+      BucketName: adoptai-utils-prod-tcc
 
   CustomLambdaFunction:
     Type: AWS::Lambda::Function
@@ -127,13 +127,13 @@ Resources:
 
       Environment:
         Variables:
-          BUCKET_UTILS: adoptai-utils-dev
+          BUCKET_UTILS: adoptai-utils-prod-tcc
 
   CustomResource:
     Type: Custom::UploadFile
     Properties:
       ServiceToken: !GetAtt CustomLambdaFunction.Arn
-      BUCKET_UTILS: adoptai-utils-dev
+      BUCKET_UTILS: adoptai-utils-prod-tcc
     DependsOn: BucketUtils
 
   LambdaRawTrusted:
@@ -144,16 +144,16 @@ Resources:
       Runtime: python3.8
       Handler: raw_trusted/main.lambda_handler
       Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
-      FunctionName: adoptai-raw-trusted-dev
+      FunctionName: adoptai-raw-trusted-prod-tcc
       Layers:
         # - arn:aws:lambda:us-east-1:446751924810:layer:python-3-8-scikit-learn-0-23-1:2
         - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:7
       Environment:
         Variables:
-          BUCKET_RAW: adoptai-raw-dev
-          BUCKET_TRUSTED: adoptai-trusted-dev
+          BUCKET_RAW: adoptai-raw-prod-tcc
+          BUCKET_TRUSTED: adoptai-trusted-prod-tcc
       Code:
-        S3Bucket: adoptai-utils-dev
+        S3Bucket: adoptai-utils-prod-tcc
         S3Key: lambda_zip/lambda_package_raw_trusted.zip
     DependsOn: CustomResource
   
