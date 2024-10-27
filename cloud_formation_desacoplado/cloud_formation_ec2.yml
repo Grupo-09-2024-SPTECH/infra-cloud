@@ -43,7 +43,7 @@ Resources:
     Properties:
       KeyName: !Ref Ec2KeyPairName
       ImageId: !Ref Ec2AmiId
-      InstanceType: t2.small
+      InstanceType: t2.medium
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
